@@ -2,37 +2,36 @@ using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Threading.Tasks;
-using dotnet_rpg.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
+using my_dotnet5_rpg.Models;
 
-namespace dotnet_rpg.Data
+namespace my_dotnet5_rpg.Data
 {
     public class AuthRepository : IAuthRepository
     {
         private readonly DataContext _context;
-        private readonly IConfiguration _configuration;
-        public AuthRepository(DataContext context, IConfiguration configuration)
+        private readonly IConfiguration _configuraion;
+        public AuthRepository(DataContext context, IConfiguration configuraion)
         {
-            _configuration = configuration;
+            _configuraion = configuraion;
             _context = context;
 
         }
-
-        public async Task<ServiceResponse<string>> Login(string username, string password)
+        public async Task<ServiceResponse<string>> Login(string userName, string password)
         {
             var response = new ServiceResponse<string>();
-            var user = await _context.Users.FirstOrDefaultAsync(x => x.Username.ToLower().Equals(username.ToLower()));
+            var user = await _context.Users.FirstOrDefaultAsync(x => x.UserName.ToLower().Equals(userName.ToLower()));
             if (user == null)
             {
                 response.Success = false;
-                response.Message = "User not found.";
+                response.Message = "User not found";
             }
             else if (!VerifyPasswordHash(password, user.PasswordHash, user.PasswordSalt))
             {
                 response.Success = false;
-                response.Message = "Wrong password.";
+                response.Message = "Wrong password";
             }
             else
             {
@@ -44,11 +43,13 @@ namespace dotnet_rpg.Data
 
         public async Task<ServiceResponse<int>> Register(User user, string password)
         {
-            ServiceResponse<int> response = new ServiceResponse<int>();
-            if (await UserExists(user.Username))
+            var response = new ServiceResponse<int>();
+
+            if (await UserExists(user.UserName))
             {
                 response.Success = false;
                 response.Message = "User already exists.";
+                response.Data = -1;
                 return response;
             }
 
@@ -57,19 +58,15 @@ namespace dotnet_rpg.Data
             user.PasswordHash = passwordHash;
             user.PasswordSalt = passwordSalt;
 
-            _context.Users.Add(user);
+            _context.Add(user);
             await _context.SaveChangesAsync();
             response.Data = user.Id;
             return response;
         }
 
-        public async Task<bool> UserExists(string username)
+        public async Task<bool> UserExists(string userName)
         {
-            if (await _context.Users.AnyAsync(x => x.Username.ToLower().Equals(username.ToLower())))
-            {
-                return true;
-            }
-            return false;
+            return await _context.Users.AnyAsync(u => u.UserName.ToLower().Equals(userName.ToLower()));
         }
 
         private void CreatePasswordHash(string password, out byte[] passwordHash, out byte[] passwordSalt)
@@ -89,9 +86,7 @@ namespace dotnet_rpg.Data
                 for (int i = 0; i < computedHash.Length; i++)
                 {
                     if (computedHash[i] != passwordHash[i])
-                    {
                         return false;
-                    }
                 }
                 return true;
             }
@@ -102,15 +97,17 @@ namespace dotnet_rpg.Data
             var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(ClaimTypes.Name, user.Username)
+                new Claim(ClaimTypes.Name, user.UserName)
             };
 
-         // var key = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(_configuration.GetSection("AppSettings:Token").Value));
-            var key = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(_configuration.GetSection("AppSettings:Token").Value));
-
+            var key = new SymmetricSecurityKey(
+                System.Text.Encoding.UTF8.GetBytes((
+                    _configuraion.GetSection("AppSettings:Token").Value
+                )));
+            
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512Signature);
 
-            var tokendDescriptor = new SecurityTokenDescriptor
+            var tokenDescriptor = new SecurityTokenDescriptor
             {
                 Subject = new ClaimsIdentity(claims),
                 Expires = System.DateTime.Now.AddDays(1),
@@ -118,7 +115,7 @@ namespace dotnet_rpg.Data
             };
 
             var tokenHandler = new JwtSecurityTokenHandler();
-            var token = tokenHandler.CreateToken(tokendDescriptor);
+            var token = tokenHandler.CreateToken(tokenDescriptor);
 
             return tokenHandler.WriteToken(token);
         }
